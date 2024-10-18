@@ -1,36 +1,32 @@
 
 #include <SPI.h>
 #include <TFT_eSPI.h>
-#include <XPT2046_Touchscreen.h>
-
+// #include <XPT2046_Touchscreen.h>
+// TODO maybe implement touch screen?? web page possibly better
+#include "Free_Fonts.h"
 #include <WiFi.h>
+#include <AsyncTCP.h>
 #include <HTTPClient.h>
+#include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
+AsyncWebServer server(80);
 
-TFT_eSPI tft = TFT_eSPI();
+const char* ssid = "SSID";
+const char* password = "PASSWORD";
 
-// Touchscreen pins
-#define XPT2046_IRQ 36   // T_IRQ
-#define XPT2046_MOSI 32  // T_DIN
-#define XPT2046_MISO 39  // T_OUT
-#define XPT2046_CLK 25   // T_CLK
-#define XPT2046_CS 33    // T_CS
+const char* PARAM_INPUT = "input";
 
-SPIClass touchscreenSPI = SPIClass(VSPI);
-XPT2046_Touchscreen touchscreen(XPT2046_CS, XPT2046_IRQ);
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html><head>
+  <title>ESP Input Form</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  </head><body>
+  <form action="/get">
+    Stock Ticker <input type="text" name="input" size="4" maxlength="4" style="text-transform:uppercase">
+  </form>
+</body></html>)rawliteral";
 
-#define SCREEN_WIDTH 320
-#define SCREEN_HEIGHT 240
-#define FONT_SIZE 4
-
-const char *ssid = "";          // your network SSID (name of wifi network)
-const char *password = "";  // your network password
-
-const char *server = "www.alphavantage.co";  // Server URL
-
-// root certificate for alphavantage.co
-// TODO find a better fucking api
-
+// gooder api found, 60 calls per minute HELL YEAH
 const char *test_root_ca = R"literal(
 -----BEGIN CERTIFICATE-----
 MIIDejCCAmKgAwIBAgIQf+UwvzMTQ77dghYQST2KGzANBgkqhkiG9w0BAQsFADBX
@@ -55,120 +51,153 @@ vepuoxtGzi4CZ68zJpiq1UvSqTbFJjtbD4seiMHl
 -----END CERTIFICATE-----
 )literal";
 
+
 WiFiClientSecure client;
+
 String response;
 
-String HTTPSRequest() {
-
+// take in a string for the ticker symbol
+// TODO add error handling && maybe change to AsyncHTTPClient
+String HTTPSRequest(String ticker) {
   String response = "";
 
-  // set the ssl/tls cert
+  WiFiClientSecure client;
   client.setCACert(test_root_ca);
 
-  Serial.println("\nStarting connection to server...");
+  HTTPClient http;
 
-  // if da conektion failed
-  if (!client.connect(server, 443)) {
-    Serial.println("Connection failed!");
-  } else { // suksess
-    Serial.println("Connected to server!");
-    client.println("GET https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=NVDA&apikey=API_KEY_HERE HTTP/1.0");
-    client.println("Host: www.alphavantage.co");
-    client.println("Connection: close");
-    client.println();
+  String apiurl = "https://finnhub.io/api/v1/quote?symbol=" + ticker + "&token=API_KEY";
 
-    // while connected 
-    while (client.connected()) {
-      String line = client.readStringUntil('\n');
-      if (line == "\r") {
-        Serial.println("headers received");
-        break;
-      }
-    }
+  // using secure client!!
+  http.begin(client, apiurl); 
 
-    // if there are bytes available read and append them
-    while (client.available()) {
-      String line = client.readStringUntil('\n');
-      response += line;
-    }
+  int httpCode = http.GET();
 
-    // TODO fix everything?
-    client.stop();
+  if (httpCode > 0) { 
+    response = http.getString(); 
+    Serial.println("Response received:");
+    Serial.println(response);
+  } else {
+    Serial.printf("GET request failed, error: %s\n", http.errorToString(httpCode).c_str());
   }
 
-  // return tha juicy json
-  return response;
+  http.end();
 
+  return response; 
 }
+
+void notFound(AsyncWebServerRequest *request) {
+  request->send(404, "text/plain", "Not found");
+}
+
+// to upper for a whole string
+void to_upper(const char *str, char *out_str)
+{
+  while(*str != 0) {
+    *out_str = toupper(*str);
+    ++str;
+    ++out_str;
+  }
+  *out_str = 0;
+}
+
+TFT_eSPI tft = TFT_eSPI();
+
+
+#define SCREEN_WIDTH 320
+#define SCREEN_HEIGHT 240
+#define FONT_SIZE 2
+
+String inputMessage = "Waiting for input";  // the input from the web page form
+bool inputUpdated = false;  // flag for when the input is updated
+
+// temp var for upperstring
+char upperString[100];
 
 void setup() {
   Serial.begin(115200);
 
-  // start the spi for the touchscreen
-  touchscreenSPI.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
-  touchscreen.begin(touchscreenSPI);
 
-  // set touchscreen rotation
+  WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
+  WiFi.setHostname("esp32-web");
 
-  touchscreen.setRotation(1);
+  WiFi.begin(ssid, password);
+  if (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    Serial.println("WiFi Failed!");
+    return;
+  }
+  Serial.println();
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
 
-  // start display
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", index_html);
+  });
+
+  server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request) {
+    String inputParam;
+    if (request->hasParam(PARAM_INPUT)) {
+      inputMessage = request->getParam(PARAM_INPUT)->value();
+      to_upper(inputMessage.c_str(), upperString);
+      inputMessage = upperString;
+      inputUpdated = true;
+    }
+    else {
+      inputMessage = "No message sent";
+      inputParam = "none";
+    }
+    Serial.println(inputMessage);
+    request->redirect("/");
+  });
+
+  server.onNotFound(notFound);
+  server.begin();
+
   tft.init();
-  // set DISPLAY rotation
   tft.setRotation(1);
-
-  // clear the screen with white quickly
-  tft.fillScreen(TFT_WHITE);
-  tft.setTextColor(TFT_BLACK, TFT_WHITE);
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
   
-  // screen cenetres 
   int centerX = SCREEN_WIDTH / 2;
   int centerY = SCREEN_HEIGHT / 2;
 
-  // connect to ssid with the password & output console
-  Serial.print("Attempting to connect to SSID: ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
-
-  // attempt to connect 
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    // wait 1 second for re-trying
-    delay(1000);
-  }
-
-  // output console the ssid that was connected to
-  Serial.print("Connected to ");
-  Serial.println(ssid);
-
-  // draw string to the tft that conneciton was successful && local ip
   tft.drawString("Connected", 10, 220, 2);
-  tft.drawString("IP: " + WiFi.localIP().toString(), 90, 220, 2);
+  tft.drawString("IP: 192.168.1.1", 90, 220, 2);
 
-  // get the response from the api
-  // STOP JUDGING THIS IS A MAJOR PROOF OF CONCEPT
-  response = HTTPSRequest();
+  tft.setFreeFont(FF17);  
 
-  // prep repsonse for json parsing w/ arduinojson
-  StaticJsonDocument<512> doc;
-  DeserializationError error = deserializeJson(doc, response);
+  tft.setTextSize(3);
 
-  // parse stock symbol and price
-  String ticker = doc["Global Quote"]["01. symbol"];
-  String price = doc["Global Quote"]["05. price"];
-
-  // output the unparsed json response to console
-  Serial.println(response);
-
-  // draw ticker 
-  String tempText = "Ticker: " + ticker;
-  tft.drawCentreString(tempText, centerX, 30, 8);
-
-  // draw price
-  tempText = "Price: " + price;
-  tft.drawCentreString(tempText, centerX, 120, FONT_SIZE);
+  tft.drawCentreString("Waiting for input", centerX, centerY, FONT_SIZE);
 }
 
 void loop() {
-// int bank_account = 999999999;
+  // if the input is updated, make the request for the ticker symbol
+  if (inputUpdated) {
+    
+    tft.fillScreen(TFT_BLACK);
+
+    tft.setTextSize(3);
+    tft.drawString(inputMessage, 10, 10);
+
+    response = HTTPSRequest(inputMessage);
+
+    StaticJsonDocument<512> doc;
+    DeserializationError error = deserializeJson(doc, response);
+
+    String price;
+    if (doc["c"].is<int>()) {
+        price = String(doc["c"].as<int>()) + ".00";
+    } else if (doc["c"].is<float>()) {
+        price = String(doc["c"].as<float>(), 2);
+    } else {
+        price = "Invalid price";
+    }
+    
+    tft.setTextSize(4);
+    String tempText = "$" + price;
+    tft.drawString(tempText, 10, 70);
+
+    inputUpdated = false; 
+  }
 }
