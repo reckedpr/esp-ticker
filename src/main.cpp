@@ -146,6 +146,7 @@ void setup() {
       inputMessage = "No message sent";
       inputParam = "none";
     }
+    Serial.println("Web Form Input:");
     Serial.println(inputMessage);
     request->redirect("/");
   });
@@ -162,11 +163,12 @@ void setup() {
   int centerY = SCREEN_HEIGHT / 2;
 
   tft.drawString("Connected", 10, 220, 2);
-  tft.drawString("IP: 192.168.1.1", 90, 220, 2);
+  String tempText = "IP: " + WiFi.localIP().toString();
+  tft.drawString(tempText, 90, 220, 2);
 
   tft.setFreeFont(FF17);  
 
-  tft.setTextSize(3);
+  tft.setTextSize(2);
 
   tft.drawCentreString("Waiting for input", centerX, centerY, FONT_SIZE);
 }
