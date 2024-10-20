@@ -28,19 +28,24 @@ An ESP-32 based stock ticker display, inspired by [TickrMeter](https://tickrmete
   - [X] ESP32 CYD Module
   - [ ] Design 3D Printed Enclosure
   - [ ] Add Li-Po Battery
-  - [ ] Use micro SD for.. something
 - [x] Display
   - [X] Draw Stock Ticker Symbol
   - [X] Draw Current Stock Price
-  - [ ] Price % relative to timeframe
-  - [ ] Colour Indicator
+  - [X] Price % relative to timeframe
+  - [X] Colour Indicator
+  - [ ] Add date
+  - [ ] Introduce alternate layouts
 - [x] Backend
   - [X] Local Webserver
-  - [X] Form Input
+    - [X] Form Input
+    - [ ] Config Options
+    - [ ] Improve UI
   - [X] API Handling
   - [ ] Thorough error handling
   - [ ] Use AsyncHTTPClient instead of HTTPClient
 
 ## 🌌 Future Plans
+- [ ] Use micro SD for config/themes?
+- [ ] Add portrait option?
 - [ ] Use E-ink display
 - [ ] ~~Switch to raspberyy Pi Zero 2W~~
