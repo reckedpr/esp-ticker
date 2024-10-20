@@ -12,7 +12,7 @@
 AsyncWebServer server(80);
 
 const char* ssid = "SSID";
-const char* password = "PASSWORD";
+const char* password = "PASS";
 
 const char* PARAM_INPUT = "input";
 
@@ -66,7 +66,7 @@ String HTTPSRequest(String ticker) {
 
   HTTPClient http;
 
-  String apiurl = "https://finnhub.io/api/v1/quote?symbol=" + ticker + "&token=API_KEY";
+  String apiurl = "https://finnhub.io/api/v1/quote?symbol=" + ticker + "&token=API KEY";
 
   // using secure client!!
   http.begin(client, apiurl); 
@@ -99,6 +99,10 @@ void to_upper(const char *str, char *out_str)
     ++out_str;
   }
   *out_str = 0;
+}
+
+float truncateDecimal(float value) {
+    return (int)(value * 100) / 100.0;
 }
 
 TFT_eSPI tft = TFT_eSPI();
@@ -177,10 +181,7 @@ void loop() {
   // if the input is updated, make the request for the ticker symbol
   if (inputUpdated) {
     
-    tft.fillScreen(TFT_BLACK);
-
-    tft.setTextSize(3);
-    tft.drawString(inputMessage, 10, 10);
+    // tft.fillScreen(TFT_BLACK);
 
     response = HTTPSRequest(inputMessage);
 
@@ -193,12 +194,50 @@ void loop() {
     } else if (doc["c"].is<float>()) {
         price = String(doc["c"].as<float>(), 2);
     } else {
-        price = "Invalid price";
+        price = "error";
     }
+
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+    tft.fillRect(0, 0, SCREEN_WIDTH, 180, TFT_BLACK);
+
+    tft.setTextSize(3);
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.drawString(inputMessage, 10, 10);
     
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.setTextSize(4);
     String tempText = "$" + price;
     tft.drawString(tempText, 10, 70);
+
+    String change;
+
+    if (doc["d"].is<int>()) {
+        change = String(doc["d"].as<int>()) + ".00";
+    } else if (doc["d"].is<float>()) {
+        change = String(doc["d"].as<float>(), 2);
+    } else {
+        change = "error";
+    }
+
+    if (doc["dp"].is<int>()) {
+        change += " (" + String(doc["dp"].as<int>()) + ".00%)";
+    } else if (doc["dp"].is<float>()) {
+        float dp = truncateDecimal(doc["dp"].as<float>());
+        change += " (" + String(dp, 2) + "%)";
+    } else {
+        change = "error";
+    }
+
+    if (doc["d"] > 0) {
+        change = "+" + change;
+        tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    } else {
+        tft.setTextColor(TFT_RED, TFT_BLACK);
+    }
+
+    tft.setTextSize(2);
+    tft.drawString(change, 10, 140);
 
     inputUpdated = false; 
   }
